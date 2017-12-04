@@ -1,0 +1,254 @@
+\documentclass[11pt]{beamer}
+\usetheme{metropolis}
+%\usecolortheme[snowy]{owl}
+%\usetheme[hideothersubsections]{Berkeley}
+%\useoutertheme{metropolis}
+%\useinnertheme{metropolis}
+%\usefonttheme{metropolis}
+%\usecolortheme{seahorse}
+%\usecolortheme{wolverine}
+
+
+\makeatletter
+\def\beamer@framenotesbegin{% at beginning of slide
+    \usebeamercolor[fg]{normal text}
+    \gdef\beamer@noteitems{}%
+    \gdef\beamer@notes{}%
+}
+\makeatother
+
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{minted}
+\usepackage{csquotes}
+\usepackage{graphicx}
+\usepackage{tabularx}
+
+\usemintedstyle{default}
+
+\author{Mario Tambos}
+
+\title{Lab Course Machine Learning and Data Analysis}
+\subtitle{Exercise Sheet 2 - Assignments 4, 5 and 6}
+\institute{Machine Learning/Intelligent Data Analysis Group @ TU Berlin}
+
+\date{\today}
+
+\begin{document}
+	\maketitle
+	\section{Assignment 4}
+	\subsection{The Problem}
+	\begin{frame}[fragile=singleslide]
+		\frametitle{The Problem}
+        Write a function that computes the probability density function for a multivariate Gaussian distribution
+        \begin{minted}{python3}
+y = norm_pdf(X, mu, C)
+        \end{minted}
+        where
+        \begin{align*}
+            X &\in \mathbb{R}^{n \times d} &\texttt{mu} &\in \mathbb{R}^{n \times d} \\
+            C &\in \mathbb{R}^{d \times d} &y 			&\in \mathbb{R}^{n} \\
+            \end{align*}
+            \begin{align*}
+            y_i    		=& \dfrac{1}{(2\pi)^\frac{d}{2}\det(C)^\frac{1}{2}}
+                            \exp\left(\dfrac{1}{2}(X_i-\texttt{mu})^\top C^{-1} (X_i - \texttt{mu}) \right)\\
+            & \forall y_i \in y, X_i \in X
+        \end{align*}
+	\end{frame}
+	\subsection{The Code}
+	\begin{frame}[fragile=singleslide]
+        \frametitle{The Code}
+        \begin{minted}[fontsize=\footnotesize,linenos,mathescape]{python3}
+def norm_pdf(X: np.ndarray, mu: np.ndarray, C: np.ndarray,
+             tol: float=1e-5, modify_C: bool=False) -> np.ndarray:
+    _, M = X.shape
+    # Obtain a non-singular version of "C" (and its det.)
+    # by progressively adding "tol" to "C"'s diagonal.
+    C, det_C = get_nonsingular_C(C, tol, modify_C)
+    X = X.T
+    C = C.T
+    mu = mu.reshape(M, 1)
+    b = X - mu
+    # Solve $Cc=b$ for $c$ using the least squares method.
+    # $A$ can be under-, well-, or over-determined. 
+    c, *_ = np.linalg.lstsq(C, b)
+    denominator = (2*np.pi)**(M/2) * det_C**0.5
+    nominator = np.diag(b.T @ c)
+    nominator = np.exp(-nominator/2)
+    return nominator/denominator
+        \end{minted}
+	\end{frame}
+    \section{Assignment 5}
+    \subsection{The Problem}
+    \begin{frame}[fragile=singleslide]
+        \frametitle{The Problem}
+        Implement the EM algorithm for Gaussian Mixture Models (GMM) as a function:
+        \begin{minted}[fontsize=\small]{python3}
+pi, mu, sigma, loglik = em_gmm(X, k, max_iter=100,
+                               init_kmeans=False, tol=1e-5)
+        \end{minted}
+        where:
+        \scriptsize{
+            \begin{description}
+                \item [\texttt{pi}] length $k$ array of $\pi_k$.
+                \item [\texttt{mu}] $k \times d$ array of $\mu_k$ (Center Points).
+                \item [\texttt{sigma}] List of length $k$ of the $d \times d$ covariance matrices $\Sigma_k$.
+                \item [\texttt{loglik}] The log likelihood at the end of the iterations.
+                \item [\texttt{X}] $n \times d$ array of datapoints.
+                \item [\texttt{k}] number of normally distributed components.
+                \item [\texttt{max\_iter}] Optional: maximal number of Iterations (default: \mintinline{python3}{100}).
+                \item [\texttt{init\_kmeans}] Optional: Initialisation by means of K-Means Cluster solution (default: \mintinline{python3}{False}).
+            \end{description}
+        }
+        \normalsize
+   \end{frame}
+   \subsection{The Code}
+   \begin{frame}[fragile=singleslide]
+       \frametitle{The Code -- Initialization}
+       \begin{minted}[fontsize=\footnotesize,linenos]{python3}
+def em_gmm(X: np.ndarray, k: int, max_iter: int=100,
+           init_kmeans: bool=False, tol: float=1e-5,
+           print_progress=True)\
+        -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    N, M = X.shape
+    pi = np.ones(k)/k
+    indexes = np.random.choice(np.arange(N), size=k, replace=False)
+    if init_kmeans:
+        mu, _, _ = kmeans(X, k, max_iter,
+                          print_progress=print_progress)
+    else:
+        mu = X[indexes].copy()
+    sigma = np.zeros((k, M, M)) + np.eye(M)
+    loglik = 0
+    prev_loglik = 0
+    gamma = np.zeros((k, N))
+    for i in range(max_iter):
+       \end{minted}
+   \end{frame}
+   \begin{frame}[fragile=singleslide]
+       \frametitle{The Code -- E-Step}
+       \begin{minted}[fontsize=\footnotesize,linenos,firstnumber=last,mathescape]{python3}
+        for centr in range(k):
+            # If norm_pdf(X, mu[centr], sigma[centr]) is small
+            # $\forall x \in X$ (all points are more likely to 
+            # belong to another $\mu_j$) 
+            # $\Rightarrow$ gamma[centr] becomes very small
+            gamma[centr] = pi[centr] * \
+                           norm_pdf(X, mu[centr], sigma[centr],
+                                    tol=tol, modify_C=True)
+        # Normalization
+        gamma /= gamma.sum(axis=0)
+       \end{minted}
+   \end{frame}
+   \begin{frame}[fragile=singleslide]
+       \frametitle{The Code -- M-Step}
+       \begin{minted}[fontsize=\footnotesize,linenos,firstnumber=last,mathescape]{python3}
+        loglik = 0
+        for centr in range(k):
+            # if gamma_centr very small
+            # $\Rightarrow$ pi[centr] $\rightarrow$ 0; mu[centr] $\rightarrow \mathbf{0}$;
+            # sigma[centr] $\rightarrow$ singular
+            gamma_centr = gamma[centr, :].reshape(N, 1)
+            Nk = gamma_centr.sum()
+            pi[centr] = Nk/N
+            mu[centr] = (X * gamma_centr).sum(axis=0)/Nk
+            mu_centr = mu[centr]
+            # equivalent to $\frac{1}{N_k}\sum_{N}^{n=1}\gamma_{nk}(X_n - \hat{\mu}_k)(X_n - \hat{\mu}_k)^\top $
+            b = np.sqrt(gamma_centr) * (X - mu_centr)
+            sigma[centr] = (b.T @ b)/Nk
+            loglik += (gamma_centr *
+                       norm_pdf(X, mu_centr, sigma[centr],
+                                tol=tol, modify_C=True)).sum()
+            loglik = np.log(loglik)
+       \end{minted}
+   \end{frame}
+   \begin{frame}[fragile=singleslide]
+        \frametitle{The Code -- Flow Control}
+        \begin{minted}[fontsize=\footnotesize,linenos,firstnumber=last]{python3}
+        if print_progress:
+            print(f"Iteration: {i}. Log likelihood: {loglik}")
+        # use isclose() instead of __eq__
+        # to avoid floating point errors
+        if np.isclose(loglik, prev_loglik):
+            break
+        prev_loglik = loglik
+    print(f"Number of iterations: {i + 1}. Log likelihood: {loglik}")
+    return pi, mu, sigma, loglik
+        \end{minted}
+    \end{frame}
+	\section{Assignment 6}
+    \subsection{The Problem}
+    \begin{frame}[fragile=singleslide]
+        \frametitle{The Problem}
+        Write a function that visualizes the GMM for two-dimensional data:
+        \begin{minted}{python3}
+plot_gmm solution(X, mu, sigma)
+        \end{minted}
+        The figure should show:
+        \begin{itemize}
+            \item the data as a scatter plot;
+            \item the mean vectors as red crosses; and
+            \item the covariance matrices as ellipses (centered at the mean).
+        \end{itemize}
+    \end{frame}
+    \subsection{The Code}
+    \begin{frame}[fragile=singleslide]
+        \frametitle{The Code -- Initialization, data and $\mu_k$'s}
+        \begin{minted}[fontsize=\footnotesize,linenos,mathescape]{python3}
+# extra parameter "ax" added to enable external subplots
+def plot_gmm_solution(X: np.ndarray, mu: np.ndarray,
+                      sigma: np.ndarray, ax=None) -> None:
+    show_fig = False
+    if ax is None:
+        plt.figure(figsize=(8, 8))
+        ax = plt.gca()
+        show_fig = True
+    x_min, y_min = X.min(axis=0) - np.ones(2)
+    x_max, y_max = X.max(axis=0) + np.ones(2)
+    ax.scatter(*X.T)  # Scatter for the data
+    # Scatter for the $\mu_k$'s, as red crosses
+    ax.scatter(*mu.T, marker='+', c='r')
+        \end{minted}
+    \end{frame}
+    \begin{frame}[fragile=singleslide]
+    \frametitle{The Code -- Ellipses for the $\Sigma_k$'s and show}
+    \begin{minted}[fontsize=\footnotesize,linenos,firstnumber=last,mathescape]{python3}
+    # Draw ellipses for the $\Sigma_k$'s
+    for sig, centr in zip(sigma, mu):
+        lambda_, v = np.linalg.eig(sig)
+        lambda_ = np.sqrt(lambda_)
+        ell = Ellipse(xy=(centr[0], centr[1]),
+                      width=lambda_[0], height=lambda_[1],
+                      angle=np.rad2deg(np.arccos(v[0, 0])))
+        ell.set_facecolor('none')
+        ell.set_edgecolor('r')
+        ell.set_linewidth(1)
+        ax.add_artist(ell)
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    if show_fig:  # if no "ax" was passed
+        plt.savefig('gmm.png')  # save figure
+        plt.show()  # and show plot
+        \end{minted}
+    \end{frame}
+	\section{Appendix}
+    \begin{frame}[fragile=singleslide]
+        \frametitle{\texttt{get\_nonsingular\_C}}
+        \begin{minted}[fontsize=\footnotesize,linenos]{python3}
+        def get_nonsingular_C(C: np.ndarray, tol: float,
+                              modify_C: bool)\
+                -> Tuple[np.ndarray, float]:
+            _, M = C.shape
+            det_C = np.linalg.det(C)
+            i = 1
+            while det_C < tol:
+                if modify_C:
+                    C += np.eye(M) * tol * i
+                else:
+                    C = C + np.eye(M) * tol * i
+                det_C = np.linalg.det(C)
+                i += 1
+            return C, det_C
+        \end{minted}
+    \end{frame}
+\end{document}
